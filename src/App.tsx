@@ -7,7 +7,6 @@ import {
   Box,
   Camera,
   Check,
-  CheckCircle2,
   ChevronDown,
   ClipboardCheck,
   ClipboardList,
@@ -20,7 +19,6 @@ import {
   Grid2X2,
   History,
   ImagePlus,
-  Link2,
   LayoutDashboard,
   ListChecks,
   Loader2,
@@ -37,14 +35,12 @@ import {
   Sparkles,
   TrendingUp,
   Upload,
-  UserPlus,
   Users,
   WandSparkles,
   Workflow,
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import { aiProviders } from "./data/aiProviders";
 import {
   evaluateMarketplaceRecommendations,
   marketplaceRecommendations,
@@ -206,10 +202,10 @@ function formatCurrencyRange(low: number, high: number) {
 }
 
 function getRiskCopy(risk: ProductCandidate["risk"]) {
-  if (risk === "low") return { label: "Likely authentic", tone: "success", confidence: 92 };
-  if (risk === "medium-low") return { label: "Likely authentic", tone: "success", confidence: 88 };
-  if (risk === "medium") return { label: "Needs review", tone: "warning", confidence: 76 };
-  return { label: "High risk", tone: "danger", confidence: 59 };
+  if (risk === "low") return { label: "Low-risk indicators visible", tone: "success", confidence: 92 };
+  if (risk === "medium-low") return { label: "Low-risk indicators visible", tone: "success", confidence: 88 };
+  if (risk === "medium") return { label: "Risk indicators present — review recommended", tone: "warning", confidence: 76 };
+  return { label: "High-risk indicators present", tone: "danger", confidence: 59 };
 }
 
 function createFreshScanSlots(): SlotState[] {
@@ -337,7 +333,12 @@ export default function App() {
   const listingDraft = remoteListingDraft ?? baseListingDraft;
 
   function setFreshScanState() {
-    setSlots(createFreshScanSlots());
+    setSlots((current) => {
+      current.forEach((slot) => {
+        if (slot.preview) URL.revokeObjectURL(slot.preview);
+      });
+      return createFreshScanSlots();
+    });
     setActiveSlotId("upper-lateral");
     setAnalysisState("ready");
     setScanAnalysis(null);
@@ -347,11 +348,14 @@ export default function App() {
 
   function handleCapture(slotId: string, file?: File) {
     setSlots((current) =>
-      current.map((slot) =>
-        slot.id === slotId
-          ? { ...slot, captured: true, preview: file ? URL.createObjectURL(file) : slot.preview }
-          : slot,
-      ),
+      current.map((slot) => {
+        if (slot.id !== slotId) return slot;
+        const nextPreview = file ? URL.createObjectURL(file) : slot.preview;
+        if (file && slot.preview && slot.preview !== nextPreview) {
+          URL.revokeObjectURL(slot.preview);
+        }
+        return { ...slot, captured: true, preview: nextPreview };
+      }),
     );
     setActiveSlotId(slotId);
     setAnalysisState("ready");
@@ -365,7 +369,13 @@ export default function App() {
   }
 
   function handleRetake(slotId: string) {
-    setSlots((current) => current.map((slot) => (slot.id === slotId ? { ...slot, captured: false, preview: undefined } : slot)));
+    setSlots((current) =>
+      current.map((slot) => {
+        if (slot.id !== slotId) return slot;
+        if (slot.preview) URL.revokeObjectURL(slot.preview);
+        return { ...slot, captured: false, preview: undefined };
+      }),
+    );
     setActiveSlotId(slotId);
     setAnalysisState("ready");
     setScanAnalysis(null);
@@ -489,6 +499,19 @@ export default function App() {
       window.removeEventListener("popstate", handleRouteChange);
     };
   }, [membershipTier]);
+
+  const slotsRef = useRef(slots);
+  useEffect(() => {
+    slotsRef.current = slots;
+  }, [slots]);
+
+  useEffect(() => {
+    return () => {
+      slotsRef.current.forEach((slot) => {
+        if (slot.preview) URL.revokeObjectURL(slot.preview);
+      });
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -672,8 +695,12 @@ function Topbar({
       </button>
       <div className="mobile-page-title">{pageLabel(activePage)}</div>
       <label className="search-field">
-        <Search size={17} />
-        <input placeholder="Search scans, SKUs, listings, stores" />
+        <Search size={17} aria-hidden="true" />
+        <input
+          type="search"
+          placeholder="Search scans, SKUs, listings, stores"
+          aria-label="Search scans, SKUs, listings, stores"
+        />
       </label>
       <MembershipTierControl tier={membershipTier} onTierChange={onMembershipTierChange} compact />
       <div className="topbar-actions">
@@ -960,7 +987,13 @@ function ScanPanel({
         </div>
         <div className="action-group">
           <button className="secondary-button" type="button" onClick={onClear}>Clear scan</button>
-          <button className="primary-button" type="button" onClick={onAnalyze} disabled={!ready}>
+          <button
+            className="primary-button"
+            type="button"
+            onClick={onAnalyze}
+            disabled={!ready || analysisState === "processing"}
+            aria-busy={analysisState === "processing"}
+          >
             {analysisState === "processing" ? <Loader2 className="spin" size={18} /> : <WandSparkles size={18} />}
             {analysisState === "processing" ? "Analyzing..." : "Analyze scan"}
           </button>
@@ -1121,6 +1154,24 @@ function ResultColumn({
 }) {
   const risk = getRiskCopy(product.risk);
   const confidencePercent = Math.round(confidence * 100);
+  const isDemoPricing = product.priceStatus === "demo";
+  const showLivePricing = marketplaceFeedsLive && !isDemoPricing;
+  const pricingHeading = showLivePricing
+    ? "Estimated value"
+    : isDemoPricing
+    ? "Demo pricing"
+    : "Pricing status";
+  const pricingValue = showLivePricing
+    ? formatCurrencyRange(product.valueLow, product.valueHigh)
+    : isDemoPricing
+    ? "Demo data — live sold-comps required"
+    : "Needs comps";
+  const pricingHelper = showLivePricing
+    ? "Market range (GBP)"
+    : isDemoPricing
+    ? "Sample numbers shown for layout only"
+    : "Connect live sold-data feeds";
+  const pricingPendingLabel = isDemoPricing ? "Demo only" : "Pending";
   return (
     <section className="result-column" aria-label="Scan results">
       <div className="panel identified-panel">
@@ -1150,8 +1201,17 @@ function ResultColumn({
           <div>
             <h3>Authenticity risk</h3>
             <span className={`risk-pill ${risk.tone}`}>{risk.label}</span>
-            <label>Confidence <span>{risk.confidence}%</span></label>
-            <div className="confidence-meter"><span style={{ width: `${risk.confidence}%` }} /></div>
+            <p className="confidence-label" id="risk-confidence-label">Confidence <span>{risk.confidence}%</span></p>
+            <div
+              className="confidence-meter"
+              role="meter"
+              aria-labelledby="risk-confidence-label"
+              aria-valuenow={risk.confidence}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <span style={{ width: `${risk.confidence}%` }} />
+            </div>
           </div>
         </div>
         <div className="check-list">
@@ -1185,11 +1245,11 @@ function ResultColumn({
           ))}
         </div>
         <div className="value-card">
-          <h3>{marketplaceFeedsLive ? "Estimated value" : "Pricing status"}</h3>
-          <strong>{marketplaceFeedsLive ? formatCurrencyRange(product.valueLow, product.valueHigh) : "Needs comps"}</strong>
-          <span>{marketplaceFeedsLive ? "Market range (GBP)" : "Connect live sold-data feeds"}</span>
-          <div><small>Suggested list price</small><b>{marketplaceFeedsLive ? formatCurrency(product.suggestedPrice) : "Pending"}</b></div>
-          <div><small>Fast-sale price</small><b>{marketplaceFeedsLive ? formatCurrency(product.fastSalePrice) : "Pending"}</b></div>
+          <h3>{pricingHeading}</h3>
+          <strong>{pricingValue}</strong>
+          <span>{pricingHelper}</span>
+          <div><small>Suggested list price</small><b>{showLivePricing ? formatCurrency(product.suggestedPrice) : pricingPendingLabel}</b></div>
+          <div><small>Fast-sale price</small><b>{showLivePricing ? formatCurrency(product.fastSalePrice) : pricingPendingLabel}</b></div>
         </div>
       </div>
       <div className="quick-actions">
@@ -1600,6 +1660,8 @@ function ConsumerMobilePage({
   const referenceImages = catalogSummary?.imageCount ?? dataReadiness?.catalog.referenceImages ?? 0;
   const hasLiveMarketplaceFeeds = dataReadiness?.marketplaceFeeds.enabled ?? false;
   const isCatalogProduct = product.dataSource === "catalog";
+  const isDemoPricing = product.priceStatus === "demo";
+  const showLivePricing = hasLiveMarketplaceFeeds && !isDemoPricing;
   const visibleCatalogCandidates = catalogCandidates.slice(0, 4);
   const isProcessing = analysisState === "processing";
   const isComplete = analysisState === "complete";
@@ -1779,7 +1841,7 @@ function ConsumerMobilePage({
             ))}
           </div>
           <div className="consumer-hero-actions">
-            <button className="consumer-primary" type="button" onClick={handlePrimaryScanAction}>
+            <button className="consumer-primary" type="button" onClick={handlePrimaryScanAction} disabled={isProcessing} aria-busy={isProcessing}>
               {isProcessing ? <Loader2 className="spin" size={18} /> : needsMoreEvidence ? <ImagePlus size={18} /> : <Camera size={18} />}
               {primaryScanLabel}
             </button>
@@ -1826,11 +1888,11 @@ function ConsumerMobilePage({
           <div className="consumer-stat-grid">
             <article><ShieldCheck size={17} /><span>Risk check</span><strong>{risk.label}</strong></article>
             <article><Gauge size={17} /><span>Condition</span><strong>{product.gradeLabel}</strong></article>
-            <article><TrendingUp size={17} /><span>{hasLiveMarketplaceFeeds ? "Value" : "Pricing"}</span><strong>{hasLiveMarketplaceFeeds ? formatCurrencyRange(product.valueLow, product.valueHigh) : "Needs comps"}</strong></article>
+            <article><TrendingUp size={17} /><span>{showLivePricing ? "Value" : "Pricing"}</span><strong>{showLivePricing ? formatCurrencyRange(product.valueLow, product.valueHigh) : isDemoPricing ? "Demo data — live sold-comps required" : "Needs comps"}</strong></article>
           </div>
           <div className="consumer-price-row">
-            <article><span>{hasLiveMarketplaceFeeds ? "List at" : "Catalog images"}</span><strong>{hasLiveMarketplaceFeeds ? formatCurrency(product.suggestedPrice) : (product.catalogImageCount ?? referenceImages).toLocaleString("en-GB")}</strong></article>
-            <article><span>{hasLiveMarketplaceFeeds ? "Fast sale" : "Market comps"}</span><strong>{hasLiveMarketplaceFeeds ? formatCurrency(product.fastSalePrice) : "Required"}</strong></article>
+            <article><span>{showLivePricing ? "List at" : isDemoPricing ? "Live pricing" : "Catalog images"}</span><strong>{showLivePricing ? formatCurrency(product.suggestedPrice) : isDemoPricing ? "Pending live sold-comps" : (product.catalogImageCount ?? referenceImages).toLocaleString("en-GB")}</strong></article>
+            <article><span>{showLivePricing ? "Fast sale" : "Market comps"}</span><strong>{showLivePricing ? formatCurrency(product.fastSalePrice) : "Required"}</strong></article>
             <article><span>{isCatalogProduct ? "Source" : "Release"}</span><strong>{isCatalogProduct ? "Real catalog" : product.release}</strong></article>
           </div>
           {product.editionStory ? <div className="consumer-edition-note"><span>Edition context</span><p>{product.editionStory}</p></div> : null}
@@ -1898,7 +1960,7 @@ function ConsumerMobilePage({
           <div><span>Closet entry</span><strong>Ready to save with proof and care context.</strong><p>Keep this pair's scan evidence, identity, condition notes, care plan, and resale-readiness in one place.</p></div>
           <div className="consumer-mini-grid">
             <article><span>Identity</span><strong>{product.brand} {product.model}</strong></article>
-            <article><span>Value</span><strong>{hasLiveMarketplaceFeeds ? formatCurrencyRange(product.valueLow, product.valueHigh) : "Pending comps"}</strong></article>
+            <article><span>Value</span><strong>{showLivePricing ? formatCurrencyRange(product.valueLow, product.valueHigh) : isDemoPricing ? "Demo data — live sold-comps required" : "Pending comps"}</strong></article>
             <article><span>Care</span><strong>{product.nextAction}</strong></article>
           </div>
           <div className="consumer-card-actions">
@@ -2030,7 +2092,7 @@ function ListingDrawer({
   const [price, setPrice] = useState(product.suggestedPrice);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "blocked">("idle");
   const topMarketplace = marketplaceAgentResults[0];
-  const pricePending = product.priceStatus === "pending" || !topMarketplace;
+  const pricePending = product.priceStatus === "pending" || product.priceStatus === "demo" || !topMarketplace;
 
   async function handleCopy() {
     const draft = `${listing.title}\n\n${listing.description}\n\nPrice: ${pricePending ? "Pending live marketplace comps" : formatCurrency(price)}`;
