@@ -1340,7 +1340,8 @@ h3 {
   background: rgba(255, 82, 82, 0.12);
 }
 
-.risk-card label {
+.risk-card label,
+.risk-card .confidence-label {
   display: flex;
   justify-content: space-between;
   margin: 14px 0 6px;

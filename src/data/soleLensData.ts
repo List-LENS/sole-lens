@@ -136,6 +136,8 @@ export const productCandidates: ProductCandidate[] = [
     risk: "medium-low",
     nextAction: "Clean before listing",
     careImpact: "Expected resale lift of 8-12% after outsole and midsole cleaning.",
+    dataSource: "demo",
+    priceStatus: "demo",
   },
   {
     id: "jordan-4",
@@ -157,6 +159,8 @@ export const productCandidates: ProductCandidate[] = [
     risk: "medium",
     nextAction: "Route to expert review",
     careImpact: "High-value silhouette with moderate label ambiguity.",
+    dataSource: "demo",
+    priceStatus: "demo",
   },
   {
     id: "yeezy-350",
@@ -178,6 +182,8 @@ export const productCandidates: ProductCandidate[] = [
     risk: "medium",
     nextAction: "Upload clearer label image",
     careImpact: "Needs label and insole evidence before resale trust badge.",
+    dataSource: "demo",
+    priceStatus: "demo",
   },
 ];
 
