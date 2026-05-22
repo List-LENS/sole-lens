@@ -1169,7 +1169,7 @@ function ResultColumn({
   const pricingHelper = showLivePricing
     ? "Market range (GBP)"
     : isDemoPricing
-    ? "Sample numbers shown for layout only"
+    ? "Live sold-comps required before pricing is shown"
     : "Connect live sold-data feeds";
   const pricingPendingLabel = isDemoPricing ? "Demo only" : "Pending";
   return (
